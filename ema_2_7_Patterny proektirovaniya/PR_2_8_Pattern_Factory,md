@@ -1,0 +1,821 @@
+# ПЗ 2.8. Реализация паттернов Factory Method, Adapter
+
+**Тема:** Порождающие паттерны (Factory Method), Структурные паттерны (Adapter)
+
+**Цель работы:**  
+Научиться реализовывать паттерны Factory Method и Adapter на Python, понимать, в каких ситуациях их применять, уметь проектировать гибкие и расширяемые системы.
+
+**Время выполнения:** 90-120 минут
+
+**Необходимое ПО:**  
+- VS Code с расширением Python
+- Python 3.8+
+- Установленные пакеты: `pylint`, `radon`
+
+```bash
+pip install pylint radon
+Нулевой вариант (эталонный) — Демонстрация преподавателя
+Назначение: преподаватель выполняет этот вариант на занятии, показывая реализацию обоих паттернов.
+
+Техническое задание (нулевой вариант)
+Разработайте систему для обработки документов различных форматов (PDF, DOCX, TXT). Используйте:
+
+Factory Method — для создания парсеров документов разных типов
+
+Adapter — для интеграции со сторонней библиотекой обработки PDF
+
+Эталонная реализация
+python
+#!/usr/bin/env python3
+"""
+Модуль для обработки документов с использованием паттернов
+Factory Method и Adapter.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Dict, Any, List, Optional
+from dataclasses import dataclass
+from datetime import datetime
+import os
+
+
+# ============================================================
+# ЧАСТЬ 1: АДАПТЕР (Adapter Pattern)
+# ============================================================
+
+# ---------- СТОРОННЯЯ БИБЛИОТЕКА (несовместимый интерфейс) ----------
+class ExternalPDFProcessor:
+    """
+    Сторонняя библиотека для работы с PDF.
+    Имеет неудобный для нас интерфейс.
+    """
+    
+    def __init__(self, license_key: str):
+        self.license_key = license_key
+        self._initialized = False
+    
+    def initialize(self) -> bool:
+        """Инициализация библиотеки"""
+        if self.license_key:
+            self._initialized = True
+            print(f"[ExternalPDF] Инициализирована с ключом {self.license_key[:5]}...")
+        return self._initialized
+    
+    def extract_content_raw(self, file_path: str) -> bytes:
+        """Извлечение сырого содержимого"""
+        print(f"[ExternalPDF] Извлечение сырых данных из {file_path}")
+        return b"Raw PDF content"
+    
+    def parse_document_structure(self, raw_data: bytes) -> Dict:
+        """Парсинг структуры документа"""
+        print(f"[ExternalPDF] Парсинг структуры документа")
+        return {
+            "pages": 5,
+            "metadata": {"author": "External Author", "title": "External Title"},
+            "text": "Extracted text from PDF using external library"
+        }
+    
+    def get_text_by_page(self, structured_data: Dict, page_num: int) -> str:
+        """Получение текста по странице"""
+        return f"Page {page_num} content from external library"
+
+
+# ---------- НАШ ЦЕЛЕВОЙ ИНТЕРФЕЙС ----------
+class DocumentParser(ABC):
+    """Целевой интерфейс для парсинга документов"""
+    
+    @abstractmethod
+    def parse(self, file_path: str) -> 'Document':
+        pass
+    
+    @abstractmethod
+    def get_metadata(self) -> Dict[str, Any]:
+        pass
+    
+    @abstractmethod
+    def get_text(self) -> str:
+        pass
+
+
+@dataclass
+class Document:
+    """Модель документа"""
+    title: str
+    author: str
+    content: str
+    pages: int
+    format: str
+    created_at: datetime = None
+    
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now()
+    
+    def __str__(self) -> str:
+        return f"Document({self.format}): {self.title} by {self.author}, {self.pages} pages"
+
+
+# ---------- АДАПТЕР ДЛЯ PDF ----------
+class PDFAdapter(DocumentParser):
+    """Адаптер для сторонней PDF библиотеки"""
+    
+    def __init__(self, external_processor: ExternalPDFProcessor):
+        self._external = external_processor
+        self._current_document: Optional[Document] = None
+        self._raw_data: Optional[bytes] = None
+        self._structured_data: Optional[Dict] = None
+    
+    def parse(self, file_path: str) -> Document:
+        """Адаптация внешнего интерфейса к нашему"""
+        # Шаг 1: инициализация
+        if not self._external._initialized:
+            self._external.initialize()
+        
+        # Шаг 2: извлечение сырых данных
+        self._raw_data = self._external.extract_content_raw(file_path)
+        
+        # Шаг 3: парсинг структуры
+        self._structured_data = self._external.parse_document_structure(self._raw_data)
+        
+        # Шаг 4: преобразование в нашу модель
+        metadata = self._structured_data.get("metadata", {})
+        self._current_document = Document(
+            title=metadata.get("title", os.path.basename(file_path)),
+            author=metadata.get("author", "Unknown"),
+            content=self._structured_data.get("text", ""),
+            pages=self._structured_data.get("pages", 0),
+            format="PDF"
+        )
+        
+        return self._current_document
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        if self._current_document:
+            return {
+                "title": self._current_document.title,
+                "author": self._current_document.author,
+                "pages": self._current_document.pages,
+                "format": self._current_document.format
+            }
+        return {}
+    
+    def get_text(self) -> str:
+        if self._current_document:
+            return self._current_document.content
+        return ""
+
+
+# ---------- НАТИВНЫЕ ПАРСЕРЫ (без адаптера) ----------
+class TXTParser(DocumentParser):
+    """Парсер для текстовых файлов"""
+    
+    def __init__(self):
+        self._document: Optional[Document] = None
+    
+    def parse(self, file_path: str) -> Document:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            self._document = Document(
+                title=os.path.basename(file_path),
+                author="Unknown",
+                content=content,
+                pages=content.count('\n') // 50 + 1,
+                format="TXT"
+            )
+            return self._document
+        except FileNotFoundError:
+            raise ValueError(f"File not found: {file_path}")
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        if self._document:
+            return {
+                "title": self._document.title,
+                "author": self._document.author,
+                "pages": self._document.pages,
+                "format": self._document.format
+            }
+        return {}
+    
+    def get_text(self) -> str:
+        return self._document.content if self._document else ""
+
+
+class DOCXParser(DocumentParser):
+    """Парсер для DOCX файлов (упрощённая версия)"""
+    
+    def __init__(self):
+        self._document: Optional[Document] = None
+    
+    def parse(self, file_path: str) -> Document:
+        # В реальном коде здесь была бы библиотека python-docx
+        print(f"[DOCXParser] Чтение файла {file_path}")
+        
+        self._document = Document(
+            title=os.path.basename(file_path).replace('.docx', ''),
+            author="Docx Author",
+            content="Sample DOCX content",
+            pages=3,
+            format="DOCX"
+        )
+        return self._document
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        if self._document:
+            return {
+                "title": self._document.title,
+                "author": self._document.author,
+                "pages": self._document.pages,
+                "format": self._document.format
+            }
+        return {}
+    
+    def get_text(self) -> str:
+        return self._document.content if self._document else ""
+
+
+# ============================================================
+# ЧАСТЬ 2: ФАБРИЧНЫЙ МЕТОД (Factory Method Pattern)
+# ============================================================
+
+class DocumentParserFactory(ABC):
+    """Абстрактный создатель (Factory Method)"""
+    
+    @abstractmethod
+    def create_parser(self) -> DocumentParser:
+        """Фабричный метод для создания парсера"""
+        pass
+    
+    def parse_document(self, file_path: str) -> Document:
+        """Шаблонный метод, использующий фабричный метод"""
+        parser = self.create_parser()
+        return parser.parse(file_path)
+
+
+class TXTParserFactory(DocumentParserFactory):
+    """Фабрика для создания TXT парсера"""
+    
+    def create_parser(self) -> DocumentParser:
+        return TXTParser()
+
+
+class DOCXParserFactory(DocumentParserFactory):
+    """Фабрика для создания DOCX парсера"""
+    
+    def create_parser(self) -> DocumentParser:
+        return DOCXParser()
+
+
+class PDFParserFactory(DocumentParserFactory):
+    """Фабрика для создания PDF парсера (с использованием адаптера)"""
+    
+    def __init__(self, license_key: str = "DEMO_KEY_12345"):
+        self.license_key = license_key
+    
+    def create_parser(self) -> DocumentParser:
+        external_processor = ExternalPDFProcessor(self.license_key)
+        return PDFAdapter(external_processor)
+
+
+# ============================================================
+# ЧАСТЬ 3: РАСШИРЯЕМАЯ ФАБРИКА (РЕГИСТРАЦИЯ ТИПОВ)
+# ============================================================
+
+class DocumentProcessor:
+    """
+    Основной класс для обработки документов.
+    Поддерживает динамическую регистрацию новых типов документов.
+    """
+    
+    def __init__(self):
+        self._factories: Dict[str, DocumentParserFactory] = {}
+        self._register_default_factories()
+    
+    def _register_default_factories(self):
+        """Регистрация фабрик по умолчанию"""
+        self.register_factory("txt", TXTParserFactory())
+        self.register_factory("docx", DOCXParserFactory())
+        self.register_factory("pdf", PDFParserFactory())
+    
+    def register_factory(self, extension: str, factory: DocumentParserFactory):
+        """Регистрация новой фабрики для расширения форматов"""
+        self._factories[extension.lower()] = factory
+        print(f"Зарегистрирована фабрика для .{extension}")
+    
+    def process_document(self, file_path: str) -> Document:
+        """Обработка документа на основе расширения файла"""
+        extension = os.path.splitext(file_path)[1][1:].lower()
+        
+        if extension not in self._factories:
+            raise ValueError(f"Unsupported file type: .{extension}")
+        
+        factory = self._factories[extension]
+        return factory.parse_document(file_path)
+    
+    def get_supported_formats(self) -> List[str]:
+        """Возвращает список поддерживаемых форматов"""
+        return list(self._factories.keys())
+
+
+# ============================================================
+# ЧАСТЬ 4: ПРИМЕР РАСШИРЕНИЯ (НОВЫЙ ФОРМАТ)
+# ============================================================
+
+class JSONParser(DocumentParser):
+    """Парсер для JSON файлов"""
+    
+    def __init__(self):
+        self._document: Optional[Document] = None
+    
+    def parse(self, file_path: str) -> Document:
+        import json
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        self._document = Document(
+            title=data.get("title", os.path.basename(file_path)),
+            author=data.get("author", "Unknown"),
+            content=json.dumps(data, indent=2, ensure_ascii=False),
+            pages=1,
+            format="JSON"
+        )
+        return self._document
+    
+    def get_metadata(self) -> Dict[str, Any]:
+        if self._document:
+            return {
+                "title": self._document.title,
+                "author": self._document.author,
+                "pages": self._document.pages,
+                "format": self._document.format
+            }
+        return {}
+    
+    def get_text(self) -> str:
+        return self._document.content if self._document else ""
+
+
+class JSONParserFactory(DocumentParserFactory):
+    """Фабрика для JSON парсера"""
+    
+    def create_parser(self) -> DocumentParser:
+        return JSONParser()
+
+
+# ============================================================
+# ЧАСТЬ 5: ДЕМОНСТРАЦИЯ
+# ============================================================
+
+def create_sample_files():
+    """Создание тестовых файлов для демонстрации"""
+    
+    # TXT файл
+    with open("sample.txt", "w", encoding='utf-8') as f:
+        f.write("Это пример текстового документа.\n" * 20)
+    
+    # JSON файл
+    import json
+    with open("sample.json", "w", encoding='utf-8') as f:
+        json.dump({
+            "title": "JSON Документ",
+            "author": "Иван Иванов",
+            "content": "Данные в формате JSON",
+            "version": 1.0
+        }, f, ensure_ascii=False, indent=2)
+
+
+def main():
+    """Демонстрация работы"""
+    
+    # Создаём тестовые файлы
+    create_sample_files()
+    
+    print("=" * 70)
+    print("ДЕМОНСТРАЦИЯ ПАТТЕРНОВ FACTORY METHOD И ADAPTER")
+    print("=" * 70)
+    
+    # Создаём процессор документов
+    processor = DocumentProcessor()
+    
+    print(f"\nПоддерживаемые форматы: {processor.get_supported_formats()}")
+    
+    # Обработка разных типов документов
+    test_files = [
+        ("sample.txt", "TXT"),
+        ("sample.json", "JSON"),
+    ]
+    
+    print("\n" + "-" * 70)
+    print("ОБРАБОТКА ДОКУМЕНТОВ")
+    print("-" * 70)
+    
+    for file_path, expected_format in test_files:
+        if not os.path.exists(file_path):
+            print(f"Файл {file_path} не найден, пропускаем")
+            continue
+        
+        try:
+            print(f"\nОбработка: {file_path}")
+            doc = processor.process_document(file_path)
+            print(f"  Результат: {doc}")
+            print(f"  Метаданные: {doc.title} ({doc.author})")
+            print(f"  Длина содержимого: {len(doc.content)} символов")
+        except ValueError as e:
+            print(f"  Ошибка: {e}")
+    
+    # Демонстрация расширяемости (новая фабрика)
+    print("\n" + "-" * 70)
+    print("РАСШИРЕНИЕ СИСТЕМЫ (НОВЫЙ ФОРМАТ)")
+    print("-" * 70)
+    
+    # Регистрируем новую фабрику для JSON
+    processor.register_factory("json", JSONParserFactory())
+    
+    print(f"Обновлённые форматы: {processor.get_supported_formats()}")
+    
+    # Обрабатываем JSON
+    if os.path.exists("sample.json"):
+        print("\nОбработка JSON файла:")
+        doc = processor.process_document("sample.json")
+        print(f"  Результат: {doc}")
+    
+    # Демонстрация работы адаптера
+    print("\n" + "-" * 70)
+    print("РАБОТА АДАПТЕРА (PDF)")
+    print("-" * 70)
+    
+    # Создаём PDF парсер через фабрику
+    pdf_factory = PDFParserFactory("LICENSE_XYZ_2024")
+    pdf_parser = pdf_factory.create_parser()
+    
+    print("\nСоздан PDF парсер через адаптер:")
+    print(f"  Тип парсера: {pdf_parser.__class__.__name__}")
+    print(f"  Внутри используется: {pdf_parser._external.__class__.__name__}")
+    
+    print("\n" + "=" * 70)
+    print("ДЕМОНСТРАЦИЯ ЗАВЕРШЕНА")
+    print("=" * 70)
+    
+    # Очистка (опционально)
+    # os.remove("sample.txt")
+    # os.remove("sample.json")
+
+
+if __name__ == "__main__":
+    main()
+Ожидаемый вывод
+text
+======================================================================
+ДЕМОНСТРАЦИЯ ПАТТЕРНОВ FACTORY METHOD И ADAPTER
+======================================================================
+
+Поддерживаемые форматы: ['txt', 'docx', 'pdf']
+
+----------------------------------------------------------------------
+ОБРАБОТКА ДОКУМЕНТОВ
+----------------------------------------------------------------------
+
+Обработка: sample.txt
+  Результат: Document(TXT): sample.txt by Unknown, 1 pages
+  Метаданные: sample.txt (Unknown)
+  Длина содержимого: 260 символов
+
+----------------------------------------------------------------------
+РАСШИРЕНИЕ СИСТЕМЫ (НОВЫЙ ФОРМАТ)
+----------------------------------------------------------------------
+Зарегистрирована фабрика для .json
+Обновлённые форматы: ['txt', 'docx', 'pdf', 'json']
+
+Обработка JSON файла:
+  Результат: Document(JSON): JSON Документ by Иван Иванов, 1 pages
+
+----------------------------------------------------------------------
+РАБОТА АДАПТЕРА (PDF)
+----------------------------------------------------------------------
+
+Создан PDF парсер через адаптер:
+  Тип парсера: PDFAdapter
+  Внутри используется: ExternalPDFProcessor
+
+======================================================================
+ДЕМОНСТРАЦИЯ ЗАВЕРШЕНА
+======================================================================
+25 вариантов практической работы (ПЗ 2.8)
+Общая структура каждого варианта:
+Студент реализует оба паттерна (Factory Method и Adapter) для заданной предметной области.
+
+Уровни сложности:
+
+Варианты 1-8: базовый (простые предметные области, 3-4 типа)
+
+Варианты 9-17: средний (реальные сценарии, интеграция со сторонними API)
+
+Варианты 18-25: сложный (множественные адаптеры, динамическая регистрация)
+
+Варианты 1-8 (Базовый уровень)
+Вариант 1. Система логирования
+ТЗ: Реализовать систему логирования с поддержкой разных назначений (консоль, файл, база данных).
+
+Adapter: Сторонняя библиотека для записи в БД имеет интерфейс write_to_db(table, data), адаптировать под log(message)
+
+Factory Method: Фабрики ConsoleLoggerFactory, FileLoggerFactory, DatabaseLoggerFactory
+
+Вариант 2. Обработка изображений
+ТЗ: Система для применения фильтров к изображениям.
+
+Adapter: Сторонняя библиотека фильтров с интерфейсом apply_filter(img_data, filter_name, params) → адаптировать под filter.apply(image)
+
+Factory Method: Фабрики BlurFilterFactory, SharpenFilterFactory, GrayscaleFilterFactory
+
+Вариант 3. Система сжатия файлов
+ТЗ: Поддержка разных алгоритмов сжатия (ZIP, GZIP, BZIP2).
+
+Adapter: Сторонняя библиотека для RAR имеет интерфейс compress_rar(files, archive_path) → адаптировать под compress(data)
+
+Factory Method: Фабрики ZipFactory, GZipFactory, BZipFactory
+
+Вариант 4. Кэширование данных
+ТЗ: Система кэширования с разными стратегиями хранения (память, файл, Redis).
+
+Adapter: Сторонняя библиотека Redis имеет интерфейс redis_set(key, value, ttl) → адаптировать под set(key, value)
+
+Factory Method: Фабрики MemoryCacheFactory, FileCacheFactory, RedisCacheFactory
+
+Вариант 5. Генерация отчётов
+ТЗ: Система генерации отчётов в разных форматах (PDF, HTML, CSV).
+
+Adapter: Сторонняя PDF библиотека имеет интерфейс generate_pdf(data, template) → адаптировать под generate(data)
+
+Factory Method: Фабрики PDFReportFactory, HTMLReportFactory, CSVReportFactory
+
+Вариант 6. Отправка сообщений
+ТЗ: Система отправки уведомлений (Email, SMS, Push).
+
+Adapter: Сторонний SMS-сервис имеет интерфейс send_sms(phone, text, sender) → адаптировать под send(recipient, message)
+
+Factory Method: Фабрики EmailFactory, SMSFactory, PushFactory
+
+Вариант 7. Сериализация данных
+ТЗ: Система сериализации в разные форматы (JSON, XML, YAML).
+
+Adapter: Сторонняя XML библиотека имеет интерфейс to_xml(obj, root_tag) → адаптировать под serialize(data)
+
+Factory Method: Фабрики JSONSerializerFactory, XMLSerializerFactory, YAMLSerializerFactory
+
+Вариант 8. Валидация данных
+ТЗ: Система валидации с разными правилами (Email, Phone, Age).
+
+Adapter: Сторонняя библиотека валидации телефонов имеет интерфейс validate_phone_number(number, country_code) → адаптировать под validate(value)
+
+Factory Method: Фабрики EmailValidatorFactory, PhoneValidatorFactory, AgeValidatorFactory
+
+Варианты 9-17 (Средний уровень)
+Вариант 9. Платёжная система
+ТЗ: Интеграция с разными платёжными шлюзами (Stripe, PayPal, YooKassa).
+
+Adapter: Stripe API имеет интерфейс stripe.Charge.create(amount, currency, source) → адаптировать под pay(amount, card_data)
+
+Factory Method: Фабрики StripeFactory, PayPalFactory, YooKassaFactory
+
+Дополнительно: Поддержка возврата платежей через адаптер
+
+Вариант 10. Облачное хранилище
+ТЗ: Система для работы с разными облачными хранилищами (S3, Google Cloud, Azure).
+
+Adapter: boto3 (S3) имеет интерфейс s3.upload_file(file, bucket, key) → адаптировать под upload(file_path, destination)
+
+Factory Method: Фабрики S3Factory, GCSFactory, AzureFactory
+
+Дополнительно: Методы download, delete, list
+
+Вариант 11. Система аутентификации
+ТЗ: Поддержка разных провайдеров аутентификации (Google, GitHub, Facebook).
+
+Adapter: OAuth2 библиотека имеет интерфейс oauth.get_user_info(access_token, provider) → адаптировать под authenticate(token)
+
+Factory Method: Фабрики GoogleAuthFactory, GitHubAuthFactory, FacebookAuthFactory
+
+Дополнительно: Получение профиля пользователя
+
+Вариант 12. Очередь сообщений
+ТЗ: Абстракция над разными брокерами сообщений (RabbitMQ, Kafka, Redis).
+
+Adapter: Библиотека Kafka имеет интерфейс kafka.producer.send(topic, key, value) → адаптировать под publish(message)
+
+Factory Method: Фабрики RabbitMQFactory, KafkaFactory, RedisFactory
+
+Дополнительно: Подписка на сообщения
+
+Вариант 13. Обработка платежей
+ТЗ: Система для расчёта комиссий с разными стратегиями (фиксированная, процентная, градиентная).
+
+Adapter: Сторонний расчётчик комиссий имеет интерфейс fee_calculator(amount, region, method) → адаптировать под calculate(amount)
+
+Factory Method: Фабрики FixedFeeFactory, PercentageFeeFactory, GradientFeeFactory
+
+Дополнительно: Поддержка разных валют
+
+Вариант 14. Система поиска
+ТЗ: Интеграция с разными поисковыми движками (Elasticsearch, Algolia, Meilisearch).
+
+Adapter: Клиент Elasticsearch имеет интерфейс es.search(index, body) → адаптировать под search(query)
+
+Factory Method: Фабрики ElasticFactory, AlgoliaFactory, MeilisearchFactory
+
+Дополнительно: Индексация документов
+
+Вариант 15. Геокодирование
+ТЗ: Система для преобразования адресов в координаты (Google Maps, Yandex, OpenStreetMap).
+
+Adapter: API Google Maps имеет интерфейс google.geocode(address, key) → адаптировать под geocode(address)
+
+Factory Method: Фабрики GoogleMapsFactory, YandexFactory, OSMFactory
+
+Дополнительно: Обратное геокодирование
+
+Вариант 16. Распознавание текста (OCR)
+ТЗ: Система для распознавания текста с изображений (Tesseract, ABBYY, Google Vision).
+
+Adapter: Tesseract имеет интерфейс tesseract.image_to_string(image, lang) → адаптировать под recognize(image_path)
+
+Factory Method: Фабрики TesseractFactory, ABBYYFactory, GoogleVisionFactory
+
+Дополнительно: Поддержка разных языков
+
+Вариант 17. Шифрование данных
+ТЗ: Система для шифрования с разными алгоритмами (AES, RSA, ChaCha20).
+
+Adapter: Криптографическая библиотека имеет интерфейс crypto.encrypt(plaintext, key, algorithm) → адаптировать под encrypt(data)
+
+Factory Method: Фабрики AESFactory, RSAFactory, ChaCha20Factory
+
+Дополнительно: Шифрование и дешифрование
+
+Варианты 18-25 (Сложный уровень)
+Вариант 18. Система мониторинга
+ТЗ: Интеграция с разными системами мониторинга (Prometheus, Datadog, New Relic).
+
+Adapter: Prometheus клиент имеет интерфейс prometheus.Gauge.set(value, labels) → адаптировать под record_metric(name, value)
+
+Factory Method: Фабрики с конфигурацией через YAML
+
+Дополнительно: Динамическая регистрация новых метрик
+
+Вариант 19. ETL-платформа
+ТЗ: Система Extract-Transform-Load с разными источниками и приёмниками.
+
+Adapter: Адаптеры для CSV, JSON, XML, Parquet, Avro
+
+Factory Method: Фабрики для каждого типа источника и приёмника
+
+Дополнительно: Цепочки трансформаций
+
+Вариант 20. Система рекомендаций
+ТЗ: Интеграция с разными движками рекомендаций (Collaborative Filtering, Content-Based, Hybrid).
+
+Adapter: Адаптеры для сторонних ML-библиотек (Surprise, LightFM, TensorFlow)
+
+Factory Method: Фабрики для каждого типа рекомендательной системы
+
+Дополнительно: A/B тестирование разных движков
+
+Вариант 21. Биллинговая система
+ТЗ: Поддержка разных тарифных планов (подписка, pay-as-you-go, с предоплатой).
+
+Adapter: Интеграция с платежными системами (каждая со своим API)
+
+Factory Method: Фабрики для каждого тарифного плана
+
+Дополнительно: Расчёт с учётом скидок и промокодов
+
+Вариант 22. Система синхронизации
+ТЗ: Синхронизация данных между разными сервисами (CRM, ERP, BI).
+
+Adapter: Адаптеры для REST, SOAP, GraphQL, gRPC API
+
+Factory Method: Фабрики для каждого типа API
+
+Дополнительно: Обработка конфликтов синхронизации
+
+Вариант 23. Платформа IoT
+ТЗ: Обработка данных с разных типов устройств (датчики, камеры, трекеры).
+
+Adapter: Адаптеры для MQTT, CoAP, WebSocket, HTTP
+
+Factory Method: Фабрики для каждого протокола
+
+Дополнительно: Работа с потоками данных (streaming)
+
+Вариант 24. Система управления контентом (CMS)
+ТЗ: Поддержка разных типов контента (статьи, видео, аудио, галереи).
+
+Adapter: Адаптеры для внешних сервисов (YouTube, Vimeo, SoundCloud)
+
+Factory Method: Фабрики для каждого типа контента
+
+Дополнительно: Плагинная архитектура
+
+Вариант 25. Low-code платформа
+ТЗ: Платформа для визуального программирования с поддержкой разных блоков.
+
+Adapter: Адаптеры для разных источников данных (БД, API, файлы)
+
+Factory Method: Фабрики для каждого типа блока (условия, циклы, функции)
+
+Дополнительно: Сериализация/десериализация схем
+
+Карточка студента (шаблон)
+text
+ПЗ 2.8. РЕАЛИЗАЦИЯ ПАТТЕРНОВ FACTORY METHOD И ADAPTER
+
+Вариант № ___
+Уровень: □ Базовый □ Средний □ Сложный
+
+Предметная область: _________________________________
+
+=== ТРЕБОВАНИЯ К ФАКТОРИ МЕТОД ===
+
+Количество типов продуктов: ___
+Базовый класс продукта: _________________________________
+Базовый класс фабрики: _________________________________
+Конкретные фабрики:
+1. _______________________________
+2. _______________________________
+3. _______________________________
+
+=== ТРЕБОВАНИЯ К АДАПТЕРУ ===
+
+Адаптируемый класс (сторонняя библиотека): _________________________________
+Его интерфейс: _________________________________
+Целевой интерфейс: _________________________________
+Что адаптируется: _________________________________
+
+=== ДОПОЛНИТЕЛЬНЫЕ ТРЕБОВАНИЯ ===
+
+□ Регистрация новых фабрик
+□ Поддержка динамической загрузки
+□ Документация (docstring)
+□ Аннотации типов
+□ Обработка ошибок
+
+=== ОТЧЁТ ===
+
+Код реализации прилагается
+Демонстрация работы прилагается
+Диаграмма классов (схема) прилагается
+
+Дата выполнения: _____________
+Критерии оценки
+Баллы	Критерий
+2 (неудовлетворительно)	Паттерны не реализованы или код не работает
+3 (удовлетворительно)	Реализован один паттерн, второй с ошибками
+4 (хорошо)	Оба паттерна реализованы, код работает
+5 (отлично)	Полная реализация, расширяемость, документация, тесты
+Шпаргалка по паттернам
+python
+# === FACTORY METHOD (ШАБЛОН) ===
+
+from abc import ABC, abstractmethod
+
+class Product(ABC):
+    @abstractmethod
+    def operation(self): pass
+
+class ConcreteProductA(Product):
+    def operation(self): return "Product A"
+
+class Creator(ABC):
+    @abstractmethod
+    def factory_method(self) -> Product:
+        pass
+    
+    def some_operation(self):
+        product = self.factory_method()
+        return product.operation()
+
+class ConcreteCreatorA(Creator):
+    def factory_method(self) -> Product:
+        return ConcreteProductA()
+
+
+# === ADAPTER (ШАБЛОН) ===
+
+class Target(ABC):
+    @abstractmethod
+    def request(self): pass
+
+class Adaptee:
+    def specific_request(self): return "specific"
+
+class Adapter(Target):
+    def __init__(self, adaptee: Adaptee):
+        self._adaptee = adaptee
+    
+    def request(self):
+        return self._adaptee.specific_request()
+Критерии оценки (детализация)
+Баллы	Factory Method	Adapter
+3 (базовый)	Одна фабрика, один продукт	Прямое преобразование методов
+4 (средний)	Иерархия фабрик (2-3 типа)	Сохранение состояния, параметры
+5 (продвинутый)	Динамическая регистрация, фабрика фабрик	Множественные адаптеры, кэширование
