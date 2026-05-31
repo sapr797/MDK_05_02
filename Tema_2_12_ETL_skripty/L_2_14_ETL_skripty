@@ -1,0 +1,787 @@
+# Тема 2.14. Концепция ETL. Выбор источников данных. Форматы CSV, JSON
+
+**Цель лекции:**  
+Изучить концепцию ETL (Extract, Transform, Load) — извлечение, преобразование и загрузку данных. Научиться выбирать источники данных, работать с форматами CSV и JSON, создавать простые ETL-скрипты.
+
+> Главная мысль: **Данные редко бывают готовы к использованию сразу. ETL — это мост между сырыми данными и ценными инсайтами.**
+
+---
+
+## Содержание
+
+1. [Введение в ETL](#1-введение-в-etl)
+2. [Этапы ETL-процесса](#2-этапы-etl-процесса)
+3. [Выбор источников данных](#3-выбор-источников-данных)
+4. [Формат CSV](#4-формат-csv)
+5. [Формат JSON](#5-формат-json)
+6. [Практические примеры ETL-скриптов](#6-практические-примеры-etl-скриптов)
+7. [Контрольные вопросы](#7-контрольные-вопросы)
+8. [Практическое задание](#8-практическое-задание)
+9. [Шпаргалка](#9-шпаргалка)
+
+---
+
+## 1. Введение в ETL
+
+### 1.1. Что такое ETL
+
+**ETL (Extract, Transform, Load)** — это процесс, который:
+1. **Извлекает (Extract)** данные из различных источников
+2. **Преобразует (Transform)** данные: очищает, нормализует, обогащает
+3. **Загружает (Load)** данные в целевую систему (хранилище, БД, файл)
+
+### 1.2. Зачем нужен ETL
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ CSV файлы │ │ JSON API │ │ SQL база │
+│ (Excel) │ │ (REST) │ │ данных │
+└────────┬────────┘ └────────┬────────┘ └────────┬────────┘
+│ │ │
+└───────────────────────┼───────────────────────┘
+▼
+┌─────────────────────────┐
+│ EXTRACT │
+│ (извлечение данных) │
+└────────────┬────────────┘
+▼
+┌─────────────────────────┐
+│ TRANSFORM │
+│ - очистка │
+│ - нормализация │
+│ - агрегация │
+│ - обогащение │
+└────────────┬────────────┘
+▼
+┌─────────────────────────┐
+│ LOAD │
+│ (загрузка в хранилище) │
+└────────────┬────────────┘
+▼
+┌─────────────────────────┐
+│ Data Warehouse / │
+│ Business Intelligence │
+└─────────────────────────┘
+
+text
+
+### 1.3. Сферы применения ETL
+
+| Область | Применение |
+|---------|------------|
+| **Бизнес-аналитика** | Сбор данных из CRM, ERP, Excel для дашбордов |
+| **Маркетинг** | Объединение данных из рекламных кабинетов |
+| **Наука о данных** | Подготовка данных для ML-моделей |
+| **Финансы** | Консолидация отчётности из разных систем |
+| **Логистика** | Сбор данных о поставках и доставках |
+
+---
+
+## 2. Этапы ETL-процесса
+
+### 2.1. Extract (Извлечение)
+
+**Источники данных:**
+
+| Тип источника | Примеры | Форматы |
+|---------------|---------|---------|
+| Файловые системы | Локальные файлы, сетевые диски | CSV, JSON, XML, Excel |
+| Базы данных | PostgreSQL, MySQL, MongoDB | SQL, NoSQL |
+| API | REST API, GraphQL | JSON, XML |
+| Потоки данных | Kafka, RabbitMQ | Сообщения |
+| Веб-страницы | HTML-скрапинг | HTML, XML |
+
+```python
+# Пример извлечения из CSV
+import csv
+
+def extract_from_csv(filepath):
+    data = []
+    with open(filepath, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            data.append(row)
+    return data
+python
+# Пример извлечения из JSON API
+import requests
+
+def extract_from_api(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+2.2. Transform (Преобразование)
+Типовые операции преобразования:
+
+Операция	Описание	Пример
+Очистка	Удаление дубликатов, пропусков	drop_duplicates()
+Нормализация	Приведение к единому формату	str.lower(), date.normalize()
+Агрегация	Группировка и суммирование	groupby().sum()
+Фильтрация	Отбор нужных записей	filter(lambda x: x > 0)
+Обогащение	Добавление данных из других источников	merge()
+Валидация	Проверка соответствия форматам	regex.match()
+Маппинг	Преобразование значений	map({'M': 'Male'})
+python
+def transform_data(raw_data):
+    transformed = []
+    
+    for record in raw_data:
+        # Очистка
+        if not record.get('name'):
+            continue
+        
+        # Нормализация
+        record['email'] = record.get('email', '').lower().strip()
+        
+        # Преобразование типов
+        if 'age' in record:
+            record['age'] = int(record['age'])
+        
+        # Добавление вычисляемых полей
+        if 'first_name' in record and 'last_name' in record:
+            record['full_name'] = f"{record['first_name']} {record['last_name']}"
+        
+        transformed.append(record)
+    
+    return transformed
+2.3. Load (Загрузка)
+Целевые системы для загрузки:
+
+Тип назначения	Примеры	Форматы
+Файлы	CSV, JSON, Parquet	Файловая система
+Базы данных	PostgreSQL, SQLite	SQL
+Data Warehouse	BigQuery, Redshift	Таблицы
+Дашборды	Tableau, Power BI	Визуализации
+python
+def load_to_csv(data, output_path):
+    """Загрузка данных в CSV файл."""
+    if not data:
+        print("Нет данных для загрузки")
+        return
+    
+    with open(output_path, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=data[0].keys())
+        writer.writeheader()
+        writer.writerows(data)
+    
+    print(f"Загружено {len(data)} записей в {output_path}")
+3. Выбор источников данных
+3.1. Критерии выбора источника
+Критерий	Вопросы для оценки
+Доступность	Есть ли API? Требуется аутентификация? Есть ли ограничения?
+Формат	В каком формате отдаются данные? (CSV, JSON, XML)
+Объём	Сколько данных? Как часто обновляются?
+Качество	Насколько данные чистые? Есть ли пропуски?
+Задержка	Реальное время или пакетная обработка?
+3.2. Сравнение источников данных
+Характеристика	CSV	JSON	API	База данных
+Простота использования	★★★★★	★★★★☆	★★★☆☆	★★☆☆☆
+Гибкость	★★☆☆☆	★★★★☆	★★★★★	★★★★★
+Объём данных	★★★☆☆	★★★☆☆	★★★★☆	★★★★★
+Скорость	★★★★☆	★★★☆☆	★★★☆☆	★★★★★
+Структурированность	★★★★★	★★★★☆	★★★★☆	★★★★★
+3.3. Выбор в зависимости от задачи
+python
+def choose_data_source(data_volume, update_frequency, required_format):
+    """
+    Рекомендация по выбору источника данных.
+    
+    Args:
+        data_volume: 'small', 'medium', 'large'
+        update_frequency: 'once', 'daily', 'realtime'
+        required_format: 'csv', 'json', 'api', 'db'
+    """
+    recommendations = {
+        ('small', 'once', 'csv'): 'Используйте CSV файлы',
+        ('small', 'once', 'json'): 'Используйте JSON файлы',
+        ('medium', 'daily', 'api'): 'Используйте REST API',
+        ('large', 'daily', 'db'): 'Используйте базу данных',
+        ('large', 'realtime', 'api'): 'Используйте WebSocket API',
+    }
+    
+    return recommendations.get(
+        (data_volume, update_frequency, required_format),
+        'Рекомендуется использовать базу данных'
+    )
+4. Формат CSV
+4.1. Что такое CSV
+CSV (Comma-Separated Values) — текстовый формат для хранения табличных данных, где строки разделены переносом, а колонки — запятыми.
+
+csv
+id,name,email,age
+1,Иван Иванов,ivan@example.com,25
+2,Мария Петрова,maria@example.com,30
+3,Петр Сидоров,petr@example.com,28
+4.2. Чтение CSV файлов
+python
+import csv
+from pathlib import Path
+
+# Способ 1: csv.reader (списки)
+def read_csv_as_lists(filepath):
+    data = []
+    with open(filepath, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        headers = next(reader)  # первая строка — заголовки
+        for row in reader:
+            data.append(row)
+    return headers, data
+
+# Способ 2: csv.DictReader (словари) — рекомендуется
+def read_csv_as_dicts(filepath):
+    data = []
+    with open(filepath, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            data.append(row)
+    return data
+
+# Способ 3: pandas (для больших данных)
+def read_csv_with_pandas(filepath):
+    import pandas as pd
+    df = pd.read_csv(filepath)
+    return df.to_dict('records')
+4.3. Запись CSV файлов
+python
+import csv
+
+# Запись списками
+def write_csv_as_lists(filepath, headers, data):
+    with open(filepath, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        writer.writerows(data)
+
+# Запись словарями (рекомендуется)
+def write_csv_as_dicts(filepath, data):
+    if not data:
+        return
+    
+    with open(filepath, 'w', encoding='utf-8', newline='') as f:
+        fieldnames = data[0].keys()
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(data)
+4.4. Параметры CSV
+python
+import csv
+
+# Различные разделители
+csv.reader(f, delimiter=';')        # точка с запятой
+csv.reader(f, delimiter='\t')       # табуляция
+csv.reader(f, delimiter='|')        # вертикальная черта
+
+# Кавычки для полей с разделителями
+csv.reader(f, quotechar='"')        # символ кавычек
+csv.reader(f, quoting=csv.QUOTE_ALL)  # все поля в кавычках
+
+# Обработка заголовков
+csv.DictReader(f, fieldnames=['id', 'name'])  # свои заголовки
+csv.DictReader(f, restkey='extra')  # лишние поля в 'extra'
+csv.DictReader(f, restval='N/A')    # значение для пропущенных полей
+4.5. Пример обработки CSV
+python
+def process_csv_employees(filepath):
+    """Обработка CSV файла с данными сотрудников."""
+    
+    # Extract
+    with open(filepath, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        employees = list(reader)
+    
+    print(f"Извлечено {len(employees)} записей")
+    
+    # Transform
+    processed = []
+    for emp in employees:
+        # Преобразование возраста в int
+        emp['age'] = int(emp['age'])
+        
+        # Нормализация email
+        emp['email'] = emp['email'].lower().strip()
+        
+        # Вычисление зарплаты за год
+        if 'salary' in emp and emp['salary']:
+            emp['annual_salary'] = int(emp['salary']) * 12
+        
+        # Фильтрация (только совершеннолетние)
+        if emp['age'] >= 18:
+            processed.append(emp)
+    
+    print(f"После преобразования: {len(processed)} записей")
+    
+    # Load
+    output_path = filepath.replace('.csv', '_processed.csv')
+    with open(output_path, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=processed[0].keys())
+        writer.writeheader()
+        writer.writerows(processed)
+    
+    print(f"Результат сохранён в {output_path}")
+    return processed
+5. Формат JSON
+5.1. Что такое JSON
+JSON (JavaScript Object Notation) — текстовый формат обмена данными, основанный на синтаксисе JavaScript.
+
+json
+{
+    "users": [
+        {
+            "id": 1,
+            "name": "Иван Иванов",
+            "email": "ivan@example.com",
+            "age": 25,
+            "address": {
+                "city": "Москва",
+                "street": "Тверская"
+            },
+            "hobbies": ["чтение", "спорт"]
+        },
+        {
+            "id": 2,
+            "name": "Мария Петрова",
+            "email": "maria@example.com",
+            "age": 30,
+            "address": {
+                "city": "Санкт-Петербург",
+                "street": "Невский"
+            },
+            "hobbies": ["музыка", "путешествия"]
+        }
+    ]
+}
+5.2. Типы данных в JSON
+Тип JSON	Пример	Python тип
+Число	42, 3.14	int, float
+Строка	"Hello"	str
+Логический	true, false	bool
+Массив	[1, 2, 3]	list
+Объект	{"key": "value"}	dict
+null	null	None
+5.3. Чтение JSON файлов
+python
+import json
+from pathlib import Path
+
+# Чтение из файла
+def read_json_file(filepath):
+    with open(filepath, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return data
+
+# Чтение из строки
+def read_json_string(json_string):
+    data = json.loads(json_string)
+    return data
+
+# Чтение с обработкой ошибок
+def safe_read_json(filepath):
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Файл {filepath} не найден")
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"Ошибка парсинга JSON: {e}")
+        return {}
+5.4. Запись JSON файлов
+python
+import json
+
+# Запись в файл (с форматированием)
+def write_json_file(filepath, data, indent=2):
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=indent, ensure_ascii=False)
+    print(f"Данные сохранены в {filepath}")
+
+# Запись без форматирования (для минимизации)
+def write_json_minified(filepath, data):
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(data, f, separators=(',', ':'), ensure_ascii=False)
+
+# Преобразование в строку
+json_string = json.dumps(data, indent=2, ensure_ascii=False)
+5.5. Работа с вложенными структурами
+python
+def flatten_json(data, parent_key='', sep='_'):
+    """
+    Преобразует вложенный JSON в плоский словарь.
+    
+    Пример:
+        {"user": {"name": "Иван", "age": 25}}
+        → {"user_name": "Иван", "user_age": 25}
+    """
+    items = []
+    for k, v in data.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_json(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
+def extract_nested_values(data, path):
+    """
+    Извлекает значение по пути в JSON.
+    
+    Args:
+        data: JSON объект
+        path: список ключей/индексов
+    """
+    current = data
+    for key in path:
+        if isinstance(current, dict):
+            current = current.get(key)
+        elif isinstance(current, list):
+            current = current[key] if isinstance(key, int) else None
+        else:
+            return None
+    return current
+
+
+# Пример использования
+data = {
+    "users": [
+        {"profile": {"name": "Иван", "contacts": {"email": "ivan@example.com"}}}
+    ]
+}
+
+# Извлечение email
+email = extract_nested_values(data, ["users", 0, "profile", "contacts", "email"])
+print(email)  # ivan@example.com
+5.6. Пример обработки JSON
+python
+def process_json_orders(filepath):
+    """Обработка JSON файла с заказами."""
+    
+    # Extract
+    with open(filepath, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    orders = data.get('orders', [])
+    print(f"Извлечено {len(orders)} заказов")
+    
+    # Transform
+    processed = []
+    for order in orders:
+        # Вычисление суммы заказа
+        total = 0
+        for item in order.get('items', []):
+            price = item.get('price', 0)
+            quantity = item.get('quantity', 0)
+            total += price * quantity
+        
+        # Добавление вычисленного поля
+        order['total_amount'] = total
+        
+        # Нормализация статуса
+        status = order.get('status', 'unknown').lower()
+        order['status'] = status
+        
+        # Преобразование даты (если есть)
+        if 'created_at' in order:
+            from datetime import datetime
+            order['created_date'] = datetime.fromisoformat(order['created_at']).date().isoformat()
+        
+        # Фильтрация (только выполненные заказы)
+        if order['status'] in ['completed', 'delivered']:
+            processed.append(order)
+    
+    print(f"После преобразования: {len(processed)} заказов")
+    
+    # Load
+    output = {
+        'processed_orders': processed,
+        'statistics': {
+            'total_orders': len(orders),
+            'processed_orders': len(processed),
+            'total_revenue': sum(o['total_amount'] for o in processed)
+        }
+    }
+    
+    output_path = filepath.replace('.json', '_processed.json')
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+    
+    print(f"Результат сохранён в {output_path}")
+    return output
+6. Практические примеры ETL-скриптов
+6.1. Пример: объединение CSV и JSON
+python
+"""
+etl_merge.py — Объединение данных из CSV и JSON.
+"""
+
+import csv
+import json
+from pathlib import Path
+from datetime import datetime
+
+
+def extract_csv_users(csv_path):
+    """Извлечение пользователей из CSV."""
+    users = {}
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            user_id = int(row['id'])
+            users[user_id] = {
+                'id': user_id,
+                'name': row['name'],
+                'email': row['email']
+            }
+    print(f"Извлечено {len(users)} пользователей из CSV")
+    return users
+
+
+def extract_json_orders(json_path):
+    """Извлечение заказов из JSON."""
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    orders = data.get('orders', [])
+    print(f"Извлечено {len(orders)} заказов из JSON")
+    return orders
+
+
+def transform_merge(users, orders):
+    """Объединение пользователей и заказов."""
+    merged = []
+    
+    for order in orders:
+        user_id = order.get('user_id')
+        user = users.get(user_id, {})
+        
+        merged_order = {
+            'order_id': order.get('id'),
+            'order_date': order.get('created_at'),
+            'total': order.get('total', 0),
+            'user_id': user_id,
+            'user_name': user.get('name', 'Unknown'),
+            'user_email': user.get('email', 'unknown@example.com')
+        }
+        merged.append(merged_order)
+    
+    print(f"Создано {len(merged)} объединённых записей")
+    return merged
+
+
+def load_merged_data(data, output_csv, output_json):
+    """Загрузка объединённых данных в CSV и JSON."""
+    # Загрузка в CSV
+    if data:
+        with open(output_csv, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=data[0].keys())
+            writer.writeheader()
+            writer.writerows(data)
+    
+    # Загрузка в JSON
+    output = {
+        'timestamp': datetime.now().isoformat(),
+        'total_records': len(data),
+        'records': data
+    }
+    
+    with open(output_json, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+    
+    print(f"Данные загружены в {output_csv} и {output_json}")
+
+
+def main():
+    """Основная ETL-функция."""
+    print("=" * 50)
+    print("ETL: ОБЪЕДИНЕНИЕ ДАННЫХ")
+    print("=" * 50)
+    
+    # ETL Pipeline
+    users = extract_csv_users('data/users.csv')
+    orders = extract_json_orders('data/orders.json')
+    merged = transform_merge(users, orders)
+    load_merged_data(merged, 'output/merged_orders.csv', 'output/merged_orders.json')
+    
+    print("\n✅ ETL процесс завершён успешно!")
+
+
+if __name__ == "__main__":
+    main()
+6.2. Пример: агрегация данных
+python
+"""
+etl_aggregate.py — Агрегация данных из CSV.
+"""
+
+import csv
+from collections import defaultdict
+from datetime import datetime
+
+
+def extract_sales_data(csv_path):
+    """Извлечение данных о продажах."""
+    sales = []
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            sales.append({
+                'date': row['date'],
+                'product': row['product'],
+                'category': row['category'],
+                'quantity': int(row['quantity']),
+                'price': float(row['price'])
+            })
+    return sales
+
+
+def transform_aggregate(sales):
+    """Агрегация данных по различным измерениям."""
+    
+    # Агрегация по категориям
+    category_stats = defaultdict(lambda: {'quantity': 0, 'revenue': 0})
+    
+    # Агрегация по месяцам
+    monthly_stats = defaultdict(lambda: {'quantity': 0, 'revenue': 0})
+    
+    # Агрегация по продуктам
+    product_stats = defaultdict(lambda: {'quantity': 0, 'revenue': 0})
+    
+    for sale in sales:
+        revenue = sale['quantity'] * sale['price']
+        
+        # По категориям
+        category_stats[sale['category']]['quantity'] += sale['quantity']
+        category_stats[sale['category']]['revenue'] += revenue
+        
+        # По продуктам
+        product_stats[sale['product']]['quantity'] += sale['quantity']
+        product_stats[sale['product']]['revenue'] += revenue
+        
+        # По месяцам
+        month = sale['date'][:7]  # YYYY-MM
+        monthly_stats[month]['quantity'] += sale['quantity']
+        monthly_stats[month]['revenue'] += revenue
+    
+    return {
+        'by_category': dict(category_stats),
+        'by_product': dict(product_stats),
+        'by_month': dict(monthly_stats),
+        'total': {
+            'quantity': sum(s['quantity'] for s in sales),
+            'revenue': sum(s['quantity'] * s['price'] for s in sales)
+        }
+    }
+
+
+def load_aggregated_data(aggregated, output_path):
+    """Загрузка агрегированных данных."""
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(aggregated, f, indent=2, ensure_ascii=False)
+    
+    print(f"Агрегированные данные сохранены в {output_path}")
+
+
+def main():
+    sales = extract_sales_data('data/sales.csv')
+    aggregated = transform_aggregate(sales)
+    load_aggregated_data(aggregated, 'output/sales_aggregated.json')
+    
+    # Вывод статистики
+    print("\n📊 СТАТИСТИКА ПРОДАЖ:")
+    print(f"   Всего продаж: {len(sales)}")
+    print(f"   Общее количество: {aggregated['total']['quantity']}")
+    print(f"   Общая выручка: {aggregated['total']['revenue']:.2f}")
+    print(f"\n   Категории: {', '.join(aggregated['by_category'].keys())}")
+7. Контрольные вопросы
+Что означает аббревиатура ETL и какие этапы включает?
+
+В чём разница между CSV и JSON форматами? Когда что выбирать?
+
+Какие операции выполняются на этапе Transform?
+
+Как прочитать CSV файл в виде словарей? Как записать?
+
+Как обработать вложенный JSON и извлечь данные?
+
+Какие источники данных можно использовать для ETL?
+
+В чём преимущества JSON перед CSV?
+
+Как обработать ошибки при чтении CSV/JSON?
+
+8. Практическое задание
+Задание 1 (базовое)
+Напишите ETL-скрипт, который читает CSV с данными о студентах, фильтрует студентов старше 18 лет и сохраняет результат в новый CSV.
+
+Задание 2 (среднее)
+Создайте ETL-пайплайн, который:
+
+Извлекает данные из JSON API (используйте публичное API)
+
+Преобразует данные (нормализация, фильтрация)
+
+Сохраняет результат в CSV
+
+Задание 3 (сложное)
+Разработайте полный ETL-скрипт для интернет-магазина:
+
+Источник 1: CSV с товарами
+
+Источник 2: JSON с заказами
+
+Преобразование: рассчитать выручку по категориям
+
+Загрузка: JSON отчёт и CSV выгрузка
+
+9. Шпаргалка
+python
+# === CSV ===
+import csv
+
+# Чтение
+with open('file.csv', 'r') as f:
+    reader = csv.DictReader(f)
+    data = list(reader)
+
+# Запись
+with open('output.csv', 'w', newline='') as f:
+    writer = csv.DictWriter(f, fieldnames=['id', 'name'])
+    writer.writeheader()
+    writer.writerows(data)
+
+# === JSON ===
+import json
+
+# Чтение
+with open('file.json', 'r') as f:
+    data = json.load(f)
+
+# Запись
+with open('output.json', 'w') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+
+# === ETL Шаблон ===
+def etl_pipeline():
+    # Extract
+    raw = extract()
+    
+    # Transform
+    cleaned = transform(raw)
+    
+    # Load
+    load(cleaned)
+    
+    return cleaned
+Итог лекции
+Вы сегодня:
+
+✅ Изучили концепцию ETL и три её этапа
+
+✅ Научились выбирать источники данных
+
+✅ Освоили работу с CSV форматом (чтение, запись, параметры)
+
+✅ Освоили работу с JSON форматом (чтение, запись, вложенные структуры)
+
+✅ Создали практические ETL-скрипты
+
+Теперь вы можете собирать, очищать и подготавливать данные для анализа!
+
